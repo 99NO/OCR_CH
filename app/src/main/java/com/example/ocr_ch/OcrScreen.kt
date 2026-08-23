@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -57,6 +58,9 @@ fun OcrScreen(
     val displayBitmap by vm.displayBitmap.collectAsState()
     val isProcessing by vm.isProcessing.collectAsState()
     val errorMessage by vm.errorMessage.collectAsState()
+    val translatedText by vm.translatedText.collectAsState()
+    val isTranslating by vm.isTranslating.collectAsState()
+    val translationError by vm.translationError.collectAsState()
 
     var cameraImageUri by remember { mutableStateOf<Uri?>(null) }
     var hasCameraPermission by remember {
@@ -132,7 +136,7 @@ fun OcrScreen(
             )
         }
 
-        // 처리 중 표시
+        // OCR 처리 중
         if (isProcessing) {
             Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -143,17 +147,16 @@ fun OcrScreen(
             }
         }
 
-        // 오류
         errorMessage?.let { err ->
             Text(text = err, color = MaterialTheme.colorScheme.error)
         }
 
-        // OCR 결과 섹션
+        // ═══ OCR 결과 섹션 ═══
         ocrResult?.let { result ->
             HorizontalDivider()
 
-            // ── OCR 텍스트 ──────────────────────────────
-            SectionTitle("OCR 결과")
+            // ── 중국어 OCR 원문 ──────────────────────────
+            SectionTitle("중국어 OCR 결과")
 
             if (result.wasRotated) {
                 Text(
@@ -181,6 +184,44 @@ fun OcrScreen(
 
             HorizontalDivider()
 
+            // ── 한국어 번역 ──────────────────────────────
+            SectionTitle("한국어 번역")
+
+            when {
+                isTranslating -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Text(
+                            text = "번역 중... (첫 실행 시 모델 다운로드 필요)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                translatedText != null -> {
+                    Text(
+                        text = translatedText!!,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, Color(0xFF388E3C), RoundedCornerShape(4.dp))
+                            .padding(8.dp)
+                    )
+                }
+                translationError != null -> {
+                    Text(
+                        text = translationError!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+
+            HorizontalDivider()
+
             // ── 문서 방향 ────────────────────────────────
             SectionTitle("Document Orientation")
 
@@ -202,9 +243,11 @@ fun OcrScreen(
                 fontWeight = FontWeight.Bold
             )
 
-            if (result.orientation == DocumentOrientation.UNKNOWN && result.validLineCount < DocumentOrientationDetector.MIN_VALID_LINES) {
+            if (result.orientation == DocumentOrientation.UNKNOWN &&
+                result.validLineCount < DocumentOrientationDetector.MIN_VALID_LINES
+            ) {
                 Text(
-                    text = "방향을 판단하기에 텍스트가 부족합니다. (유효 라인 ${result.validLineCount}개)",
+                    text = "방향 판단에 텍스트가 부족합니다. (유효 라인 ${result.validLineCount}개)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -217,7 +260,7 @@ fun OcrScreen(
 
             if (result.wasRotated) {
                 Text(
-                    text = "※ 아래 각도는 원본(1차 OCR) 기준입니다",
+                    text = "※ 아래 각도는 원본(1차 OCR) 기준",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -227,13 +270,15 @@ fun OcrScreen(
                 Text("라인 정보 없음", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 result.lineResults.forEachIndexed { i, line ->
-                    val lineClass = when {
-                        kotlin.math.abs(line.angle) <= DocumentOrientationDetector.UPRIGHT_THRESHOLD -> "↑UPRIGHT"
-                        kotlin.math.abs(line.angle) >= DocumentOrientationDetector.UPSIDE_DOWN_THRESHOLD -> "↓UPSIDEDOWN"
-                        else -> "→SIDEWAYS"
+                    val tag = when {
+                        kotlin.math.abs(line.angle) <= DocumentOrientationDetector.UPRIGHT_THRESHOLD ->
+                            "↑UP"
+                        kotlin.math.abs(line.angle) >= DocumentOrientationDetector.UPSIDE_DOWN_THRESHOLD ->
+                            "↓DN"
+                        else -> "→SW"
                     }
                     Text(
-                        text = "Line ${i + 1}: ${"%.1f".format(line.angle)}°  [$lineClass]  \"${line.text.take(18)}\"",
+                        text = "Line ${i + 1}: ${"%.1f".format(line.angle)}° [$tag]  \"${line.text.take(20)}\"",
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace
                     )
@@ -246,9 +291,9 @@ fun OcrScreen(
             SectionTitle("통계")
 
             Text("Valid Lines    : ${result.validLineCount}")
-            Text("Upright        : ${result.uprightCount}")
-            Text("Upside Down    : ${result.upsideDownCount}")
-            Text("Sideways       : ${result.sidewaysCount}")
+            Text("Upright (↑)   : ${result.uprightCount}")
+            Text("Upside Down (↓): ${result.upsideDownCount}")
+            Text("Sideways (→)  : ${result.sidewaysCount}")
 
             if (result.validLineCount > 0) {
                 Text("Upright Ratio   : ${"%.1f".format(result.uprightRatio * 100)}%")
