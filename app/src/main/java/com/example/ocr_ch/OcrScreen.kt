@@ -61,6 +61,9 @@ fun OcrScreen(
     val translatedText by vm.translatedText.collectAsState()
     val isTranslating by vm.isTranslating.collectAsState()
     val translationError by vm.translationError.collectAsState()
+    val isSpeaking by vm.isSpeaking.collectAsState()
+    val ttsReady by vm.ttsReady.collectAsState()
+    val ttsError by vm.ttsError.collectAsState()
 
     var cameraImageUri by remember { mutableStateOf<Uri?>(null) }
     var hasCameraPermission by remember {
@@ -175,6 +178,40 @@ fun OcrScreen(
                         .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
                         .padding(8.dp)
                 )
+
+                // TTS 버튼
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isSpeaking) {
+                        Button(onClick = { vm.stopSpeaking() }) {
+                            Text("⏹  읽기 정지")
+                        }
+                    } else {
+                        Button(
+                            onClick = { vm.speakChinese(result.text) },
+                            enabled = ttsReady
+                        ) {
+                            Text("🔊  중국어 읽기")
+                        }
+                    }
+                    if (!ttsReady && !isSpeaking) {
+                        Text(
+                            text = "TTS 준비 중...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                ttsError?.let { err ->
+                    Text(
+                        text = err,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
             } else {
                 Text(
                     text = "텍스트를 찾을 수 없습니다.",

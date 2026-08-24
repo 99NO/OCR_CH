@@ -26,6 +26,26 @@ class OcrViewModel(application: Application) : AndroidViewModel(application) {
 
     private val ocrManager = ChineseOcrManager()
 
+    // TTS: 초기화가 비동기이므로 콜백을 먼저 등록한 뒤 onReady에서 상태 업데이트
+    private val ttsManager = TtsManager(application).also { mgr ->
+        mgr.onReady = { supported ->
+            _ttsReady.value = supported
+            if (!supported) _ttsError.value = "기기에 중국어 TTS가 설치되어 있지 않습니다.\n설정 > 언어 > 텍스트 음성 변환에서 중국어 음성을 추가하세요."
+        }
+        mgr.onStart = { _isSpeaking.value = true }
+        mgr.onDone  = { _isSpeaking.value = false }
+        mgr.onError = { _isSpeaking.value = false }
+    }
+
+    private val _ttsReady   = MutableStateFlow(false)
+    val ttsReady: StateFlow<Boolean> = _ttsReady
+
+    private val _isSpeaking = MutableStateFlow(false)
+    val isSpeaking: StateFlow<Boolean> = _isSpeaking
+
+    private val _ttsError   = MutableStateFlow<String?>(null)
+    val ttsError: StateFlow<String?> = _ttsError
+
     private val translator = Translation.getClient(
         TranslatorOptions.Builder()
             .setSourceLanguage(TranslateLanguage.CHINESE)
@@ -62,6 +82,9 @@ class OcrViewModel(application: Application) : AndroidViewModel(application) {
             _displayBitmap.value = null
             _translatedText.value = null
             _translationError.value = null
+            ttsManager.stop()
+            _isSpeaking.value = false
+            _ttsError.value = null
 
             val bitmap = decodeBitmapFromUri(uri)
             if (bitmap == null) {
@@ -209,10 +232,25 @@ class OcrViewModel(application: Application) : AndroidViewModel(application) {
         Log.i(TAG, "==============================")
     }
 
+    fun speakChinese(text: String) {
+        if (!_ttsReady.value) {
+            _ttsError.value = "중국어 TTS를 사용할 수 없습니다. 기기 TTS 설정을 확인하세요."
+            return
+        }
+        _ttsError.value = null
+        ttsManager.speak(text)
+    }
+
+    fun stopSpeaking() {
+        ttsManager.stop()
+        _isSpeaking.value = false
+    }
+
     override fun onCleared() {
         super.onCleared()
         ocrManager.close()
         translator.close()
+        ttsManager.close()
     }
 
     companion object {
